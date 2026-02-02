@@ -14,7 +14,8 @@ class CleanCommand extends Command
         {--s|source= : Source locale to exclude from cleaning}
         {--f|force : Skip confirmation prompt}
         {--no-backup : Skip creating backup files}
-        {--dry-run : Show what would be deleted without actually deleting}';
+        {--dry-run : Show what would be deleted without actually deleting}
+        {--vendor : Clean vendor package translations (lang/vendor/)}';
 
     protected $description = 'Remove translated strings from all locale files (except source) to prepare for re-translation';
 
@@ -43,6 +44,11 @@ class CleanCommand extends Command
         try {
             $this->displayHeader();
             $this->initializeConfiguration();
+
+            // Handle vendor translations separately
+            if ($this->option('vendor')) {
+                return $this->handleVendorClean();
+            }
 
             $pattern = $this->argument('pattern');
             $target_locales = $this->getAllTargetLocales();
@@ -241,7 +247,12 @@ class CleanCommand extends Command
             if ($locale === $this->source_locale) {
                 continue;
             }
-            
+
+            // Skip vendor directory (has different structure)
+            if ($locale === 'vendor') {
+                continue;
+            }
+
             // Skip any directory that starts with underscore (like _backup)
             if (str_starts_with($locale, '_')) {
                 continue;
@@ -932,7 +943,173 @@ class CleanCommand extends Command
                 }
             }
         }
-        
+
         return $array;
+    }
+
+    /**
+     * Handle cleaning of vendor translations
+     * Structure: lang/vendor/{package}/{locale}/*.php
+     */
+    protected function handleVendorClean(): int
+    {
+        $vendorDir = $this->source_directory . '/vendor';
+        $is_dry_run = $this->option('dry-run');
+        $pattern = $this->argument('pattern');
+
+        if (!is_dir($vendorDir)) {
+            $this->error("Vendor directory not found: {$vendorDir}");
+            return self::FAILURE;
+        }
+
+        $this->line($this->colors['blue'] . 'Scanning vendor packages...' . $this->colors['reset']);
+        $this->newLine();
+
+        $packageDirs = array_filter(glob("{$vendorDir}/*"), 'is_dir');
+        $totalFiles = 0;
+        $totalStrings = 0;
+        $packageStats = [];
+
+        foreach ($packageDirs as $packageDir) {
+            $packageName = basename($packageDir);
+
+            // Filter by pattern if it looks like a package name
+            if ($pattern && !str_contains($pattern, '.') && $packageName !== $pattern) {
+                continue;
+            }
+
+            $sourceLocaleDir = "{$packageDir}/{$this->source_locale}";
+
+            // Get all locale directories except source
+            $localeDirs = array_filter(glob("{$packageDir}/*"), 'is_dir');
+            $targetLocales = [];
+
+            foreach ($localeDirs as $localeDir) {
+                $locale = basename($localeDir);
+                if ($locale !== $this->source_locale) {
+                    $targetLocales[] = $locale;
+                }
+            }
+
+            if (empty($targetLocales)) {
+                continue;
+            }
+
+            $packageStats[$packageName] = [
+                'locales' => [],
+                'total_files' => 0,
+                'total_strings' => 0,
+            ];
+
+            foreach ($targetLocales as $locale) {
+                $localeDir = "{$packageDir}/{$locale}";
+                $phpFiles = glob("{$localeDir}/*.php");
+
+                foreach ($phpFiles as $file) {
+                    try {
+                        $translations = @include $file;
+                        if (!is_array($translations)) {
+                            $this->warn("  Skipping invalid file: " . basename($file));
+                            continue;
+                        }
+
+                        $stringCount = $this->countArrayStrings($translations);
+
+                        if (!isset($packageStats[$packageName]['locales'][$locale])) {
+                            $packageStats[$packageName]['locales'][$locale] = [
+                                'files' => [],
+                                'strings' => 0,
+                            ];
+                        }
+
+                        $packageStats[$packageName]['locales'][$locale]['files'][] = [
+                            'path' => $file,
+                            'name' => basename($file),
+                            'strings' => $stringCount,
+                        ];
+                        $packageStats[$packageName]['locales'][$locale]['strings'] += $stringCount;
+                        $packageStats[$packageName]['total_files']++;
+                        $packageStats[$packageName]['total_strings'] += $stringCount;
+                        $totalFiles++;
+                        $totalStrings += $stringCount;
+
+                    } catch (\Exception $e) {
+                        $this->warn("  Error reading file: " . basename($file) . " - " . $e->getMessage());
+                    }
+                }
+            }
+        }
+
+        if ($totalStrings === 0) {
+            $this->info('No vendor translations found to clean.');
+            return self::SUCCESS;
+        }
+
+        // Display stats
+        $this->line($this->colors['bold'] . 'Vendor Clean Analysis' . $this->colors['reset']);
+        $this->newLine();
+        $this->line("Source locale (excluded): {$this->colors['green']}{$this->source_locale}{$this->colors['reset']}");
+        $this->line("Total packages: {$this->colors['yellow']}" . count($packageStats) . "{$this->colors['reset']}");
+        $this->line("Total files: {$this->colors['yellow']}{$totalFiles}{$this->colors['reset']}");
+        $this->line("Total strings to delete: {$this->colors['red']}{$totalStrings}{$this->colors['reset']}");
+        $this->newLine();
+
+        foreach ($packageStats as $packageName => $stats) {
+            $this->line("  {$this->colors['cyan']}{$packageName}{$this->colors['reset']} - {$stats['total_strings']} strings");
+            foreach ($stats['locales'] as $locale => $localeStats) {
+                $this->line("    {$locale}: {$localeStats['strings']} strings in " . count($localeStats['files']) . " files");
+            }
+        }
+
+        if ($is_dry_run) {
+            $this->newLine();
+            $this->displayInfo('ℹ Dry run completed. No files were modified.');
+            return self::SUCCESS;
+        }
+
+        // Confirm
+        if (!$this->option('force')) {
+            if (!$this->confirm("Delete {$totalStrings} strings from {$totalFiles} vendor files?", false)) {
+                $this->displayWarning('⚠ Clean operation cancelled');
+                return self::SUCCESS;
+            }
+        }
+
+        // Perform clean
+        $this->newLine();
+        $this->displayInfo('Cleaning vendor translations...');
+
+        foreach ($packageStats as $packageName => $stats) {
+            $this->line("\n  {$this->colors['yellow']}Package: {$packageName}{$this->colors['reset']}");
+
+            foreach ($stats['locales'] as $locale => $localeStats) {
+                foreach ($localeStats['files'] as $fileInfo) {
+                    // Simply empty the file (write empty array)
+                    $this->savePhpFile($fileInfo['path'], []);
+                    $this->line("    {$this->colors['green']}✓{$this->colors['reset']} Cleaned {$fileInfo['name']} ({$fileInfo['strings']} strings)");
+                }
+            }
+        }
+
+        $this->newLine();
+        $this->displaySuccess('✓ Vendor clean completed!');
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * Count strings in array (recursive)
+     */
+    protected function countArrayStrings(array $array): int
+    {
+        $count = 0;
+        foreach ($array as $value) {
+            if (is_array($value)) {
+                $count += $this->countArrayStrings($value);
+            } else {
+                $count++;
+            }
+        }
+        return $count;
     }
 }
