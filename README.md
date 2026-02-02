@@ -1,4 +1,4 @@
-<h1 align="center">Laravel AI Translator by kargnas</h1>
+<h1 align="center">Laravel AI Translator</h1>
 
 <p align="center">
 AI-powered translation tool for Laravel language files
@@ -12,8 +12,58 @@ AI-powered translation tool for Laravel language files
 </p>
 
 <p align="center">
-<a href="https://kargn.as/projects/laravel-ai-translator">Official Website</a>
+<a href="https://kargn.as/projects/laravel-ai-translator">Official Website</a> •
+<a href="README_RU.md">Документация на русском</a>
 </p>
+
+> **Note:** This is a fork of [kargnas/laravel-ai-translator](https://github.com/kargnas/laravel-ai-translator) with additional features.
+
+## 🆕 Fork Features
+
+This fork adds the following features to the original package:
+
+### Custom API Base URL (OpenRouter Support)
+
+Use OpenAI-compatible APIs like OpenRouter:
+
+```php
+'ai' => [
+    'provider' => 'openai',
+    'model' => 'anthropic/claude-sonnet-4',
+    'api_key' => env('OPENROUTER_API_KEY'),
+    'base_url' => 'https://openrouter.ai/api/v1',
+],
+```
+
+### Locked Keys Protection
+
+Protect specific translations from being overwritten during `clean` operations:
+
+1. **Mark keys in translation files** with `// @locked` comment:
+   ```php
+   return [
+       'welcome' => 'Welcome!', // @locked
+       'greeting' => 'Hello, :name!',
+   ];
+   ```
+
+2. **Export locked keys** to JSON file:
+   ```bash
+   php artisan ai-translator:export-locked
+   ```
+
+3. **Lock all vendor translations** (Filament, etc.):
+   ```bash
+   php artisan ai-translator:export-locked --lock-vendor
+   ```
+
+Locked keys are stored in `config/ai-translator-locked.json` (not loaded by Laravel automatically).
+
+### Vendor Translations Support
+
+The `--lock-vendor` option scans `lang/vendor/{package}/{locale}/*.php` and locks all keys, preventing vendor translations from being overwritten.
+
+---
 
 ## 🔄 Recent Updates
 
