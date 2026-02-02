@@ -21,6 +21,8 @@ class CleanCommand extends Command
     protected string $source_directory;
     protected string $source_locale;
     protected string $backup_directory;
+    protected array $lockedKeys = [];
+    protected int $skippedLockedCount = 0;
     protected array $colors = [
         'reset' => "\033[0m",
         'red' => "\033[31m",
@@ -109,6 +111,26 @@ class CleanCommand extends Command
         $this->source_directory = rtrim(config('ai-translator.source_directory', 'lang'), '/');
         $this->source_locale = $this->option('source') ?? config('ai-translator.source_locale', 'en');
         $this->backup_directory = $this->source_directory . '/_backup';
+        $this->lockedKeys = config('ai-translator.locked_keys', []);
+        $this->skippedLockedCount = 0;
+    }
+
+    /**
+     * Check if a key is locked for a specific locale
+     */
+    protected function isKeyLocked(string $filename, string $key, string $locale): bool
+    {
+        $fullKey = "{$filename}.{$key}";
+
+        if (!isset($this->lockedKeys[$fullKey])) {
+            return false;
+        }
+
+        $lockedLocales = is_array($this->lockedKeys[$fullKey])
+            ? $this->lockedKeys[$fullKey]
+            : [$this->lockedKeys[$fullKey]];
+
+        return in_array($locale, $lockedLocales) || in_array('*', $lockedLocales);
     }
 
     protected function backupExists(): bool
@@ -482,23 +504,29 @@ class CleanCommand extends Command
                 try {
                     if ($detail['type'] === 'php') {
                         $file_path = "{$this->source_directory}/{$locale}/{$detail['file']}";
-                        $this->cleanPhpFile($file_path, $pattern);
+                        $this->cleanPhpFile($file_path, $pattern, $locale);
                     } else {
                         $file_path = "{$this->source_directory}/{$locale}.json";
-                        $this->cleanJsonFile($file_path, $pattern);
+                        $this->cleanJsonFile($file_path, $pattern, $locale);
                     }
-                    
+
                     $this->line("  {$this->colors['green']}✓{$this->colors['reset']} Cleaned {$detail['strings']} strings from {$detail['file']}");
-                    
+
                 } catch (\Exception $e) {
                     $this->error("  Failed to clean {$detail['file']}: " . $e->getMessage());
                     throw $e;
                 }
             }
         }
+
+        // Show locked keys info if any were skipped
+        if ($this->skippedLockedCount > 0) {
+            $this->newLine();
+            $this->displayInfo("ℹ Skipped {$this->skippedLockedCount} locked keys (preserved from deletion)");
+        }
     }
 
-    protected function cleanPhpFile(string $file_path, ?string $pattern): void
+    protected function cleanPhpFile(string $file_path, ?string $pattern, string $locale = ''): void
     {
         if (!is_writable($file_path)) {
             throw new \RuntimeException("File is not writable: {$file_path}");
@@ -506,13 +534,28 @@ class CleanCommand extends Command
 
         $transformer = new PHPLangTransformer($file_path);
         $flat = $transformer->flatten();
-        $data = $this->unflattenArray($flat);
+        $filename = pathinfo($file_path, PATHINFO_FILENAME);
+
+        // Filter out locked keys before processing
+        $keysToKeep = [];
+        foreach ($flat as $key => $value) {
+            if ($this->isKeyLocked($filename, $key, $locale)) {
+                $keysToKeep[$key] = $value;
+                $this->skippedLockedCount++;
+            }
+        }
 
         if (!$pattern) {
-            // Remove all strings (empty array) but preserve file structure
-            $this->savePhpFile($file_path, []);
+            // Remove all strings except locked ones
+            if (!empty($keysToKeep)) {
+                $this->savePhpFile($file_path, $this->unflattenArray($keysToKeep));
+            } else {
+                $this->savePhpFile($file_path, []);
+            }
             return;
         }
+
+        $data = $this->unflattenArray($flat);
 
         // Handle specific key pattern
         if (str_contains($pattern, '.')) {
@@ -541,13 +584,18 @@ class CleanCommand extends Command
                 }
             }
             
-            // Now remove the matching keys
+            // Now remove the matching keys (except locked ones)
             $key_pattern = implode('.', array_slice($pattern_parts, 1));
             $flat = $transformer->flatten();
             $keys_to_remove = [];
-            
+
             foreach (array_keys($flat) as $key) {
                 if (str_starts_with($key, $key_pattern . '.') || $key === $key_pattern) {
+                    // Skip locked keys
+                    if ($this->isKeyLocked($filename, $key, $locale)) {
+                        $this->skippedLockedCount++;
+                        continue;
+                    }
                     $keys_to_remove[] = $key;
                 }
             }
@@ -583,7 +631,7 @@ class CleanCommand extends Command
         }
     }
 
-    protected function cleanJsonFile(string $file_path, ?string $pattern): void
+    protected function cleanJsonFile(string $file_path, ?string $pattern, string $locale = ''): void
     {
         if (!is_writable($file_path)) {
             throw new \RuntimeException("File is not writable: {$file_path}");
@@ -591,11 +639,26 @@ class CleanCommand extends Command
 
         $transformer = new JSONLangTransformer($file_path);
         $flat = $transformer->flatten();
+        $filename = pathinfo($file_path, PATHINFO_FILENAME);
+
+        // Filter out locked keys before processing
+        $keysToKeep = [];
+        foreach ($flat as $key => $value) {
+            if ($this->isKeyLocked($filename, $key, $locale)) {
+                $keysToKeep[$key] = $value;
+                $this->skippedLockedCount++;
+            }
+        }
+
         $data = $this->unflattenArray($flat);
 
         if (!$pattern) {
-            // Remove all strings (empty object)
-            $this->saveJsonFile($file_path, []);
+            // Remove all strings except locked ones
+            if (!empty($keysToKeep)) {
+                $this->saveJsonFile($file_path, $keysToKeep);
+            } else {
+                $this->saveJsonFile($file_path, []);
+            }
             return;
         }
 
@@ -613,12 +676,17 @@ class CleanCommand extends Command
                 return; // File doesn't match pattern
             }
             
-            // If there's a key pattern, remove matching keys
+            // If there's a key pattern, remove matching keys (except locked ones)
             if ($key_pattern !== '') {
                 $keys_to_remove = [];
-                
+
                 foreach (array_keys($data) as $key) {
                     if (str_starts_with($key, $key_pattern . '.') || $key === $key_pattern) {
+                        // Skip locked keys
+                        if ($this->isKeyLocked($filename, $key, $locale)) {
+                            $this->skippedLockedCount++;
+                            continue;
+                        }
                         $keys_to_remove[] = $key;
                     }
                 }
@@ -627,8 +695,8 @@ class CleanCommand extends Command
                     unset($data[$key]);
                 }
             } else {
-                // No key pattern, clear entire file
-                $data = [];
+                // No key pattern, clear entire file except locked keys
+                $data = $keysToKeep;
             }
 
             $this->saveJsonFile($file_path, $data);
@@ -636,14 +704,19 @@ class CleanCommand extends Command
         }
         
         // Simple key pattern (e.g., "Login", "Register")
-        // This pattern should match keys in any JSON file
+        // This pattern should match keys in any JSON file (except locked ones)
         $keys_to_remove = [];
         foreach (array_keys($data) as $key) {
             if (str_starts_with($key, $pattern . '.') || $key === $pattern) {
+                // Skip locked keys
+                if ($this->isKeyLocked($filename, $key, $locale)) {
+                    $this->skippedLockedCount++;
+                    continue;
+                }
                 $keys_to_remove[] = $key;
             }
         }
-        
+
         if (!empty($keys_to_remove)) {
             foreach ($keys_to_remove as $key) {
                 unset($data[$key]);
