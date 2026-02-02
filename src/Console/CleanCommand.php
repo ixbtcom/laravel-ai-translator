@@ -111,8 +111,25 @@ class CleanCommand extends Command
         $this->source_directory = rtrim(config('ai-translator.source_directory', 'lang'), '/');
         $this->source_locale = $this->option('source') ?? config('ai-translator.source_locale', 'en');
         $this->backup_directory = $this->source_directory . '/_backup';
-        $this->lockedKeys = config('ai-translator.locked_keys', []);
+        $this->lockedKeys = $this->loadLockedKeysFromFile();
         $this->skippedLockedCount = 0;
+    }
+
+    /**
+     * Load locked keys from JSON file.
+     */
+    protected function loadLockedKeysFromFile(): array
+    {
+        $filePath = config('ai-translator.locked_keys_file', config_path('ai-translator-locked.json'));
+
+        if (!file_exists($filePath)) {
+            return [];
+        }
+
+        $content = file_get_contents($filePath);
+        $data = json_decode($content, true);
+
+        return is_array($data) ? $data : [];
     }
 
     /**

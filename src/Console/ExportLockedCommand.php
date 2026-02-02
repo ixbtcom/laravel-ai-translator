@@ -6,20 +6,18 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 
 /**
- * Export @locked markers from translation files to config.
+ * Export @locked markers from translation files to JSON file.
  *
  * This command scans translation files for @locked markers and exports them
- * to the locked_keys config option, ensuring they won't be overwritten
- * during translation or clean operations.
+ * to a JSON file, ensuring they won't be overwritten during translation or clean operations.
  */
 class ExportLockedCommand extends Command
 {
     protected $signature = 'ai-translator:export-locked
-                          {--dry-run : Show what would be exported without modifying config}
-                          {--format=php : Output format: php (config file) or json}
+                          {--dry-run : Show what would be exported without writing file}
                           {--lock-vendor : Lock all vendor package translations (prevent overwriting)}';
 
-    protected $description = 'Export @locked markers from translation files to config';
+    protected $description = 'Export @locked markers from translation files to JSON file';
 
     protected array $lockedKeys = [];
 
@@ -29,11 +27,10 @@ class ExportLockedCommand extends Command
     {
         $sourceDir = base_path(config('ai-translator.source_directory', 'lang'));
         $dryRun = $this->option('dry-run');
-        $format = $this->option('format');
         $lockVendor = $this->option('lock-vendor');
 
-        // Load existing locked keys from config
-        $this->existingLockedKeys = config('ai-translator.locked_keys', []);
+        // Load existing locked keys from JSON file
+        $this->existingLockedKeys = $this->loadLockedKeysFromFile();
 
         $this->info('Scanning translation files for @locked markers...');
         $this->newLine();
@@ -74,7 +71,7 @@ class ExportLockedCommand extends Command
             }
 
             if (! empty($this->existingLockedKeys)) {
-                $this->info('Existing locked keys in config: '.count($this->existingLockedKeys));
+                $this->info('Existing locked keys in file: '.count($this->existingLockedKeys));
             }
 
             return 0;
@@ -121,7 +118,7 @@ class ExportLockedCommand extends Command
 
         // Display results
         if (! empty($this->existingLockedKeys)) {
-            $this->info('Existing locked keys in config: '.count($this->existingLockedKeys));
+            $this->info('Existing locked keys in file: '.count($this->existingLockedKeys));
         }
 
         if ($markerKeyCount > 0) {
@@ -133,7 +130,7 @@ class ExportLockedCommand extends Command
 
         if (empty($newKeys)) {
             $this->newLine();
-            $this->info('All markers already exist in config. Nothing to add.');
+            $this->info('All markers already exist in file. Nothing to add.');
 
             return 0;
         }
@@ -160,14 +157,35 @@ class ExportLockedCommand extends Command
             return 0;
         }
 
-        // Export to config file
-        if ($format === 'json') {
-            $this->exportToJson();
-        } else {
-            $this->exportToConfig();
-        }
+        // Export to JSON file
+        $this->exportToJsonFile();
 
         return 0;
+    }
+
+    /**
+     * Get the path to the locked keys JSON file.
+     */
+    protected function getLockedKeysFilePath(): string
+    {
+        return config('ai-translator.locked_keys_file', config_path('ai-translator-locked.json'));
+    }
+
+    /**
+     * Load existing locked keys from JSON file.
+     */
+    protected function loadLockedKeysFromFile(): array
+    {
+        $filePath = $this->getLockedKeysFilePath();
+
+        if (! file_exists($filePath)) {
+            return [];
+        }
+
+        $content = file_get_contents($filePath);
+        $data = json_decode($content, true);
+
+        return is_array($data) ? $data : [];
     }
 
     protected function scanLocaleDirectory(string $localeDir, string $locale): void
@@ -294,76 +312,14 @@ class ExportLockedCommand extends Command
         }
     }
 
-    protected function exportToJson(): void
+    protected function exportToJsonFile(): void
     {
-        $outputFile = base_path('locked-translations.json');
+        $outputFile = $this->getLockedKeysFilePath();
         $json = json_encode($this->lockedKeys, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
 
         File::put($outputFile, $json);
 
         $this->newLine();
         $this->info("Exported to: {$outputFile}");
-        $this->line('Add this to your ai-translator.php config manually.');
-    }
-
-    protected function exportToConfig(): void
-    {
-        $configFile = config_path('ai-translator.php');
-
-        if (! file_exists($configFile)) {
-            $this->error('Config file not found. Run: php artisan vendor:publish --provider="Kargnas\LaravelAiTranslator\ServiceProvider"');
-
-            return;
-        }
-
-        $content = file_get_contents($configFile);
-
-        // Generate locked_keys array
-        $lockedKeysPhp = $this->generatePhpArray($this->lockedKeys);
-
-        // Check if locked_keys already exists
-        if (preg_match("/['\"]locked_keys['\"]\s*=>/", $content)) {
-            // Replace existing locked_keys
-            $pattern = "/(['\"]locked_keys['\"]\s*=>\s*)\[[^\]]*\]/s";
-            $replacement = "'locked_keys' => {$lockedKeysPhp}";
-            $content = preg_replace($pattern, $replacement, $content);
-        } else {
-            // Add locked_keys after skip_files
-            $pattern = "/(\/\/\s*'skip_files'\s*=>\s*\[\],?)/";
-            $replacement = "$1\n\n    'locked_keys' => {$lockedKeysPhp},";
-            $content = preg_replace($pattern, $replacement, $content);
-
-            // If skip_files not found, try adding after skip_locales
-            if (! str_contains($content, "'locked_keys'")) {
-                $pattern = "/(\/\/\s*'skip_locales'\s*=>\s*\[\],?)/";
-                $replacement = "$1\n    // 'skip_files' => [],\n\n    'locked_keys' => {$lockedKeysPhp},";
-                $content = preg_replace($pattern, $replacement, $content);
-            }
-        }
-
-        File::put($configFile, $content);
-
-        $this->newLine();
-        $this->info("Updated config: {$configFile}");
-    }
-
-    protected function generatePhpArray(array $array): string
-    {
-        $items = [];
-
-        foreach ($array as $key => $value) {
-            if (is_array($value)) {
-                $valueStr = "['" . implode("', '", $value) . "']";
-            } else {
-                $valueStr = "'{$value}'";
-            }
-            $items[] = "        '{$key}' => {$valueStr}";
-        }
-
-        if (empty($items)) {
-            return '[]';
-        }
-
-        return "[\n" . implode(",\n", $items) . ",\n    ]";
     }
 }

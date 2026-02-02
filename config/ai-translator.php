@@ -46,10 +46,10 @@ return [
     // 'skip_locales' => [],
     // 'skip_files' => [],
 
-    // Locked keys that should not be overwritten during translation or clean.
-    // Use `php artisan ai-translator:export-locked` to populate this from @locked markers in translation files.
-    // Format: 'filename.key' => 'locale' or 'filename.key' => ['locale1', 'locale2']
-    // 'locked_keys' => [],
+    // Path to locked keys file (JSON). Keys in this file won't be overwritten during translation or clean.
+    // Use `php artisan ai-translator:export-locked` to generate this file from @locked markers.
+    // Set to null to disable locked keys feature.
+    // 'locked_keys_file' => config_path('ai-translator-locked.json'),
 
     // If set to true, translations will be saved as flat arrays using dot notation keys. If set to false, translations will be saved as multi-dimensional arrays.
     'dot_notation' => true,
