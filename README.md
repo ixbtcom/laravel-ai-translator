@@ -61,6 +61,21 @@ Locked keys are stored in `config/ai-translator-locked.json` (not loaded by Lara
 
 ### Vendor Translations Support
 
+**Generate source files for packages without `en` locale:**
+
+Some packages (like Mailcoach) use English text as keys, so there's no `en` directory. Generate it first:
+
+```bash
+# Generate en files for all vendor packages
+php artisan ai-translator:generate-source
+
+# Generate for specific package
+php artisan ai-translator:generate-source --vendor=mailcoach
+
+# Preview without writing
+php artisan ai-translator:generate-source --dry-run
+```
+
 **Translate vendor packages:**
 
 ```bash

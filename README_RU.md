@@ -58,6 +58,21 @@
 
 ### Поддержка вендорских переводов
 
+**Генерация source файлов для пакетов без `en` локали:**
+
+Некоторые пакеты (например Mailcoach) используют английский текст как ключи, поэтому папки `en` нет. Сначала сгенерируйте её:
+
+```bash
+# Сгенерировать en файлы для всех vendor пакетов
+php artisan ai-translator:generate-source
+
+# Сгенерировать для конкретного пакета
+php artisan ai-translator:generate-source --vendor=mailcoach
+
+# Предварительный просмотр без записи
+php artisan ai-translator:generate-source --dry-run
+```
+
 **Перевод вендорских пакетов:**
 
 ```bash
