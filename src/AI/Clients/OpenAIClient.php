@@ -13,9 +13,12 @@ class OpenAIClient
 
     protected string $apiKey;
 
-    public function __construct(string $apiKey)
+    public function __construct(string $apiKey, ?string $baseUrl = null)
     {
         $this->apiKey = $apiKey;
+        if ($baseUrl) {
+            $this->baseUrl = rtrim($baseUrl, '/');
+        }
     }
 
     /**

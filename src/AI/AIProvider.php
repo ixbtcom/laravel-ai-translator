@@ -391,7 +391,10 @@ class AIProvider
 
     protected function getTranslatedObjectsFromOpenAI(): array
     {
-        $client = new OpenAIClient(config('ai-translator.ai.api_key'));
+        $client = new OpenAIClient(
+            config('ai-translator.ai.api_key'),
+            config('ai-translator.ai.base_url')
+        );
         $totalItems = count($this->strings);
 
         // Initialize response parser
