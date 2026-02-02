@@ -297,27 +297,14 @@ class TranslateStrings extends Command
                 // Load target strings (or create)
                 $targetStringTransformer = new PHPLangTransformer($outputFile);
 
-                // Filter untranslated strings only (and skip locked keys)
-                $filename = pathinfo($file, PATHINFO_FILENAME);
-                $lockedKeys = config('ai-translator.locked_keys', []);
-
+                // Filter untranslated strings only
+                // Note: locked_keys are checked in CleanCommand, not here.
+                // If a key is locked but doesn't exist yet, we still need to translate it.
+                // Locked only protects from overwriting existing translations.
                 $sourceStringList = collect($sourceStringList)
-                    ->filter(function ($value, $key) use ($targetStringTransformer, $filename, $locale, $lockedKeys) {
+                    ->filter(function ($value, $key) use ($targetStringTransformer) {
                         // Skip already translated ones
-                        if ($targetStringTransformer->isTranslated($key)) {
-                            return false;
-                        }
-
-                        // Skip locked keys
-                        $fullKey = "{$filename}.{$key}";
-                        if (isset($lockedKeys[$fullKey])) {
-                            $lockedLocales = is_array($lockedKeys[$fullKey]) ? $lockedKeys[$fullKey] : [$lockedKeys[$fullKey]];
-                            if (in_array($locale, $lockedLocales) || in_array('*', $lockedLocales)) {
-                                return false;
-                            }
-                        }
-
-                        return true;
+                        return ! $targetStringTransformer->isTranslated($key);
                     })
                     ->toArray();
 

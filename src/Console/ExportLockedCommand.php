@@ -16,7 +16,8 @@ class ExportLockedCommand extends Command
 {
     protected $signature = 'ai-translator:export-locked
                           {--dry-run : Show what would be exported without modifying config}
-                          {--format=php : Output format: php (config file) or json}';
+                          {--format=php : Output format: php (config file) or json}
+                          {--lock-vendor : Lock all vendor package translations (prevent overwriting)}';
 
     protected $description = 'Export @locked markers from translation files to config';
 
@@ -29,6 +30,7 @@ class ExportLockedCommand extends Command
         $sourceDir = base_path(config('ai-translator.source_directory', 'lang'));
         $dryRun = $this->option('dry-run');
         $format = $this->option('format');
+        $lockVendor = $this->option('lock-vendor');
 
         // Load existing locked keys from config
         $this->existingLockedKeys = config('ai-translator.locked_keys', []);
@@ -48,8 +50,16 @@ class ExportLockedCommand extends Command
         foreach ($localeDirs as $localeDir) {
             $locale = basename($localeDir);
 
-            // Skip vendor and backup directories
-            if (in_array($locale, ['vendor', 'backup', '.backup'])) {
+            // Skip backup directories
+            if (in_array($locale, ['backup', '.backup', '_backup'])) {
+                continue;
+            }
+
+            // Handle vendor directory specially
+            if ($locale === 'vendor') {
+                if ($lockVendor) {
+                    $this->scanVendorDirectory($localeDir);
+                }
                 continue;
             }
 
@@ -57,13 +67,28 @@ class ExportLockedCommand extends Command
         }
 
         if (empty($this->lockedKeys)) {
-            $this->warn('No @locked markers found in files.');
+            if ($lockVendor) {
+                $this->warn('No vendor translations found to lock.');
+            } else {
+                $this->warn('No @locked markers found in files.');
+            }
 
             if (! empty($this->existingLockedKeys)) {
                 $this->info('Existing locked keys in config: '.count($this->existingLockedKeys));
             }
 
             return 0;
+        }
+
+        // Count vendor keys for reporting
+        $vendorKeyCount = 0;
+        $markerKeyCount = 0;
+        foreach ($this->lockedKeys as $key => $locales) {
+            if (str_starts_with($key, 'vendor/')) {
+                $vendorKeyCount++;
+            } else {
+                $markerKeyCount++;
+            }
         }
 
         // Merge with existing locked keys (existing keys take precedence, we only add new ones)
@@ -99,7 +124,12 @@ class ExportLockedCommand extends Command
             $this->info('Existing locked keys in config: '.count($this->existingLockedKeys));
         }
 
-        $this->info('Found @locked markers in files: '.count($this->lockedKeys));
+        if ($markerKeyCount > 0) {
+            $this->info("Found @locked markers in files: {$markerKeyCount}");
+        }
+        if ($vendorKeyCount > 0) {
+            $this->info("Found vendor keys to lock: {$vendorKeyCount}");
+        }
 
         if (empty($newKeys)) {
             $this->newLine();
@@ -147,6 +177,82 @@ class ExportLockedCommand extends Command
         foreach ($files as $file) {
             $this->scanPhpFile($file, $locale);
         }
+    }
+
+    /**
+     * Scan vendor directory for package translations
+     * Structure: lang/vendor/{package}/{locale}/*.php
+     */
+    protected function scanVendorDirectory(string $vendorDir): void
+    {
+        $this->info('Scanning vendor translations...');
+
+        // Get all package directories
+        $packageDirs = array_filter(glob("{$vendorDir}/*"), 'is_dir');
+
+        foreach ($packageDirs as $packageDir) {
+            $packageName = basename($packageDir);
+
+            // Get all locale directories within package
+            $localeDirs = array_filter(glob("{$packageDir}/*"), 'is_dir');
+
+            foreach ($localeDirs as $localeDir) {
+                $locale = basename($localeDir);
+
+                // Get all PHP files in locale directory
+                $files = glob("{$localeDir}/*.php");
+
+                foreach ($files as $file) {
+                    $this->scanVendorPhpFile($file, $locale, $packageName);
+                }
+            }
+        }
+    }
+
+    /**
+     * Scan vendor PHP file and lock all keys
+     */
+    protected function scanVendorPhpFile(string $file, string $locale, string $packageName): void
+    {
+        $filename = pathinfo($file, PATHINFO_FILENAME);
+
+        // Load the translations
+        if (! file_exists($file)) {
+            return;
+        }
+
+        $content = require $file;
+        if (! is_array($content)) {
+            return;
+        }
+
+        // Flatten and add all keys as locked
+        $flat = $this->flattenArray($content);
+
+        foreach (array_keys($flat) as $key) {
+            $fullKey = "vendor/{$packageName}/{$filename}.{$key}";
+            $this->addLockedKey($fullKey, $locale);
+        }
+    }
+
+    /**
+     * Flatten nested array to dot notation
+     */
+    protected function flattenArray(array $array, string $prefix = ''): array
+    {
+        $result = [];
+
+        foreach ($array as $key => $value) {
+            $newKey = $prefix ? "{$prefix}.{$key}" : $key;
+
+            if (is_array($value)) {
+                $result += $this->flattenArray($value, $newKey);
+            } else {
+                $result[$newKey] = $value;
+            }
+        }
+
+        return $result;
     }
 
     protected function scanPhpFile(string $file, string $locale): void
