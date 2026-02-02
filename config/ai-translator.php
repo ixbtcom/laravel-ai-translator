@@ -51,6 +51,10 @@ return [
     // Set to null to disable locked keys feature.
     // 'locked_keys_file' => config_path('ai-translator-locked.json'),
 
+    // Translate vendor package translations (lang/vendor/{package}/{locale}/*.php).
+    // Can also be enabled per-run with --vendor flag.
+    // 'translate_vendor' => false,
+
     // If set to true, translations will be saved as flat arrays using dot notation keys. If set to false, translations will be saved as multi-dimensional arrays.
     'dot_notation' => true,
 

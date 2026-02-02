@@ -61,7 +61,23 @@ Locked keys are stored in `config/ai-translator-locked.json` (not loaded by Lara
 
 ### Vendor Translations Support
 
-The `--lock-vendor` option scans `lang/vendor/{package}/{locale}/*.php` and locks all keys, preventing vendor translations from being overwritten.
+**Translate vendor packages:**
+
+```bash
+# Translate all vendor packages
+php artisan ai-translator:translate --vendor
+
+# Or enable in config permanently
+'translate_vendor' => true,
+```
+
+**Lock vendor translations** (prevent overwriting during clean):
+
+```bash
+php artisan ai-translator:export-locked --lock-vendor
+```
+
+The `--lock-vendor` option scans `lang/vendor/{package}/{locale}/*.php` and locks all keys.
 
 ---
 

@@ -25,7 +25,8 @@ class TranslateStrings extends Command
         {--m|max-context= : Maximum number of context items to include (e.g. --max-context=1000)}
         {--force-big-files : Force translation of files with more than 500 strings}
         {--show-prompt : Show the whole AI prompts during translation}
-        {--non-interactive : Run in non-interactive mode, using default or provided values}';
+        {--non-interactive : Run in non-interactive mode, using default or provided values}
+        {--vendor : Translate vendor package translations (lang/vendor/)}';
 
     protected $description = 'Translates PHP language files using LLMs with support for multiple locales, reference languages, chunking for large files, and customizable context settings';
 
@@ -174,6 +175,11 @@ class TranslateStrings extends Command
 
         // Execute translation
         $this->translate($maxContextItems);
+
+        // Translate vendor packages if requested
+        if ($this->option('vendor') || config('ai-translator.translate_vendor', false)) {
+            $this->translateVendor($maxContextItems);
+        }
 
         return 0;
     }
@@ -696,9 +702,11 @@ class TranslateStrings extends Command
     {
         $root = $this->sourceDirectory;
         $directories = array_diff(scandir($root), ['.', '..']);
-        // 디렉토리만 필터링하고 _로 시작하는 디렉토리 제외
+        // 디렉토리만 필터링하고 _로 시작하는 디렉토리와 vendor 제외
         $directories = array_filter($directories, function ($directory) use ($root) {
-            return is_dir($root.'/'.$directory) && !str_starts_with($directory, '_');
+            return is_dir($root.'/'.$directory)
+                && !str_starts_with($directory, '_')
+                && $directory !== 'vendor';
         });
 
         return collect($directories)->values()->toArray();
@@ -753,5 +761,200 @@ class TranslateStrings extends Command
         }
 
         return $validLocales;
+    }
+
+    /**
+     * Translate vendor package translations
+     * Structure: lang/vendor/{package}/{locale}/*.php
+     */
+    protected function translateVendor(int $maxContextItems): void
+    {
+        $vendorDir = $this->sourceDirectory.'/vendor';
+
+        if (! is_dir($vendorDir)) {
+            $this->warn('Vendor directory not found: '.$vendorDir);
+            return;
+        }
+
+        $this->line("\n".$this->colors['blue_bg'].$this->colors['white'].$this->colors['bold'].' Translating Vendor Packages '.$this->colors['reset']);
+
+        // Get all package directories
+        $packageDirs = array_filter(glob("{$vendorDir}/*"), 'is_dir');
+
+        if (empty($packageDirs)) {
+            $this->warn('No vendor packages found.');
+            return;
+        }
+
+        foreach ($packageDirs as $packageDir) {
+            $packageName = basename($packageDir);
+            $this->line("\n".$this->colors['purple_bg'].$this->colors['white'].$this->colors['bold']." Package: {$packageName} ".$this->colors['reset']);
+
+            // Check if source locale exists for this package
+            $sourceLocaleDir = "{$packageDir}/{$this->sourceLocale}";
+            if (! is_dir($sourceLocaleDir)) {
+                $this->warn("  Source locale '{$this->sourceLocale}' not found for package '{$packageName}'. Skipping.");
+                continue;
+            }
+
+            // Get all locale directories for this package
+            $localeDirs = array_filter(glob("{$packageDir}/*"), 'is_dir');
+            $availableLocales = array_map('basename', $localeDirs);
+
+            // Filter to target locales only
+            $specifiedLocales = $this->option('locale');
+            $targetLocales = ! empty($specifiedLocales)
+                ? array_intersect($specifiedLocales, $availableLocales)
+                : $availableLocales;
+
+            // Remove source locale from targets
+            $targetLocales = array_filter($targetLocales, fn($l) => $l !== $this->sourceLocale);
+
+            if (empty($targetLocales)) {
+                $this->info("  No target locales to translate for package '{$packageName}'.");
+                continue;
+            }
+
+            // Get source files
+            $sourceFiles = glob("{$sourceLocaleDir}/*.php");
+
+            if (empty($sourceFiles)) {
+                $this->warn("  No PHP files found in source locale for package '{$packageName}'.");
+                continue;
+            }
+
+            foreach ($targetLocales as $targetLocale) {
+                // Skip locales in skip list
+                if (in_array($targetLocale, config('ai-translator.skip_locales', []))) {
+                    continue;
+                }
+
+                $targetLanguageName = LanguageConfig::getLanguageName($targetLocale);
+                if (! $targetLanguageName) {
+                    $this->error("  Language name not found for locale: {$targetLocale}. Skipping.");
+                    continue;
+                }
+
+                $this->line("\n  ".$this->colors['yellow']."Translating to {$targetLanguageName} ({$targetLocale})".$this->colors['reset']);
+
+                $targetLocaleDir = "{$packageDir}/{$targetLocale}";
+
+                // Create target directory if needed
+                if (! is_dir($targetLocaleDir)) {
+                    mkdir($targetLocaleDir, 0755, true);
+                }
+
+                foreach ($sourceFiles as $sourceFile) {
+                    $fileName = basename($sourceFile);
+                    $targetFile = "{$targetLocaleDir}/{$fileName}";
+
+                    $this->translateVendorFile(
+                        $sourceFile,
+                        $targetFile,
+                        $targetLocale,
+                        $packageName,
+                        $maxContextItems
+                    );
+                }
+            }
+        }
+
+        $this->line("\n".$this->colors['green_bg'].$this->colors['white'].$this->colors['bold'].' Vendor translation completed '.$this->colors['reset']);
+    }
+
+    /**
+     * Translate a single vendor file
+     */
+    protected function translateVendorFile(
+        string $sourceFile,
+        string $targetFile,
+        string $targetLocale,
+        string $packageName,
+        int $maxContextItems
+    ): void {
+        $fileName = basename($sourceFile);
+        $this->line("    ".$this->colors['gray']."File: {$fileName}".$this->colors['reset']);
+
+        // Load source strings
+        $sourceTransformer = new PHPLangTransformer($sourceFile);
+        $sourceStringList = $sourceTransformer->flatten();
+
+        if (empty($sourceStringList)) {
+            $this->info("    ".$this->colors['gray']."Empty file. Skipping.".$this->colors['reset']);
+            return;
+        }
+
+        // Load or create target transformer
+        $targetTransformer = new PHPLangTransformer($targetFile);
+
+        // Filter untranslated strings only
+        $stringsToTranslate = collect($sourceStringList)
+            ->filter(fn($value, $key) => ! $targetTransformer->isTranslated($key))
+            ->toArray();
+
+        if (empty($stringsToTranslate)) {
+            $this->info("    ".$this->colors['green']."✓ All strings already translated.".$this->colors['reset']);
+            return;
+        }
+
+        $this->info("    ".$this->colors['yellow']."Translating ".count($stringsToTranslate)." strings...".$this->colors['reset']);
+
+        // Process in chunks
+        $totalChunks = ceil(count($stringsToTranslate) / $this->chunkSize);
+        $chunkCount = 0;
+        $translatedCount = 0;
+
+        collect($stringsToTranslate)
+            ->chunk($this->chunkSize)
+            ->each(function ($chunk) use (
+                $sourceFile,
+                $targetFile,
+                $targetLocale,
+                $targetTransformer,
+                $maxContextItems,
+                &$chunkCount,
+                $totalChunks,
+                &$translatedCount
+            ) {
+                $chunkCount++;
+                $this->info("    ".$this->colors['yellow']."Chunk {$chunkCount}/{$totalChunks}".$this->colors['reset']);
+
+                // Setup translator
+                $translator = new AIProvider(
+                    $sourceFile,
+                    $chunk->toArray(),
+                    $this->sourceLocale,
+                    $targetLocale,
+                    [],  // references
+                    [],  // additionalRules
+                    []   // globalContext
+                );
+
+                // Set callbacks
+                $translator->setOnTranslated(function ($item, $status, $translatedItems) use ($chunk) {
+                    if ($status === TranslationStatus::COMPLETED) {
+                        $this->line("      ".$this->colors['cyan']."⟳ ".$this->colors['reset'].
+                            $item->key.$this->colors['gray']." → ".$this->colors['reset'].$item->translated);
+                    }
+                });
+
+                try {
+                    $translatedItems = $translator->translate();
+                    $translatedCount += count($translatedItems);
+
+                    // Save translations
+                    foreach ($translatedItems as $item) {
+                        $targetTransformer->updateString($item->key, $item->translated);
+                    }
+
+                    // Update token usage
+                    $this->updateTokenUsageTotals($translator->getTokenUsage());
+
+                } catch (\Exception $e) {
+                    $this->error("    Translation failed: ".$e->getMessage());
+                }
+            });
+
+        $this->info("    ".$this->colors['green']."✓ Translated {$translatedCount} strings.".$this->colors['reset']);
     }
 }

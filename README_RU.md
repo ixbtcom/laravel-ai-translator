@@ -58,7 +58,23 @@
 
 ### Поддержка вендорских переводов
 
-Опция `--lock-vendor` сканирует `lang/vendor/{package}/{locale}/*.php` и блокирует все ключи, предотвращая перезапись вендорских переводов (Filament, Mailcoach и др.).
+**Перевод вендорских пакетов:**
+
+```bash
+# Перевести все вендорские пакеты
+php artisan ai-translator:translate --vendor
+
+# Или включить в конфиге постоянно
+'translate_vendor' => true,
+```
+
+**Заблокировать вендорские переводы** (защита от перезаписи при clean):
+
+```bash
+php artisan ai-translator:export-locked --lock-vendor
+```
+
+Опция `--lock-vendor` сканирует `lang/vendor/{package}/{locale}/*.php` и блокирует все ключи.
 
 ---
 
@@ -156,6 +172,9 @@ php artisan ai-translator:translate-parallel
 
 # Перевести конкретные локали
 php artisan ai-translator:translate --locale=ru,de
+
+# Включая вендорские пакеты (Filament, etc.)
+php artisan ai-translator:translate --vendor
 ```
 
 ### Перевод JSON файлов
