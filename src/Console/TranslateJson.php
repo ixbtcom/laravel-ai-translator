@@ -217,8 +217,15 @@ class TranslateJson extends Command
      */
     public function translate(int $maxContextItems = 100): void
     {
-        // Get specified locales from command line
-        $specifiedLocales = $this->option('locale');
+        // Get specified locales from command line. Allow comma-separated values
+        // (--locale=es,uz,ka) in addition to repeated flags, splitting into
+        // multiple locales for sequential execution.
+        $specifiedLocales = collect($this->option('locale'))
+            ->flatMap(fn ($l) => explode(',', (string) $l))
+            ->map(fn ($l) => trim($l))
+            ->filter()
+            ->values()
+            ->all();
 
         // Get all available locales
         $availableLocales = $this->getExistingLocales();

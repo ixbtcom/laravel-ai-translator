@@ -234,8 +234,15 @@ class TranslateStrings extends Command
      */
     public function translate(int $maxContextItems = 100): void
     {
-        // 커맨드라인에서 지정된 로케일 가져오기
-        $specifiedLocales = $this->option('locale');
+        // 커맨드라인에서 지정된 로케일 가져오기.
+        // Allow comma-separated values (--locale=es,uz,ka) in addition to
+        // repeated flags, splitting into multiple locales for sequential run.
+        $specifiedLocales = collect($this->option('locale'))
+            ->flatMap(fn ($l) => explode(',', (string) $l))
+            ->map(fn ($l) => trim($l))
+            ->filter()
+            ->values()
+            ->all();
 
         // 사용 가능한 모든 로케일 가져오기
         $availableLocales = $this->getExistingLocales();
@@ -801,8 +808,13 @@ class TranslateStrings extends Command
             $localeDirs = array_filter(glob("{$packageDir}/*"), 'is_dir');
             $availableLocales = array_map('basename', $localeDirs);
 
-            // Filter to target locales only
-            $specifiedLocales = $this->option('locale');
+            // Filter to target locales only (comma-separated allowed)
+            $specifiedLocales = collect($this->option('locale'))
+                ->flatMap(fn ($l) => explode(',', (string) $l))
+                ->map(fn ($l) => trim($l))
+                ->filter()
+                ->values()
+                ->all();
             $targetLocales = ! empty($specifiedLocales)
                 ? array_intersect($specifiedLocales, $availableLocales)
                 : $availableLocales;
