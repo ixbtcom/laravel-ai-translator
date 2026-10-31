@@ -4,20 +4,15 @@ namespace Tests\Feature\Console;
 
 use Illuminate\Support\Facades\Config;
 use Kargnas\LaravelAiTranslator\Console\TranslateJson;
+use Kargnas\LaravelAiTranslator\Transformers\JSONLangTransformer;
 
 use function Pest\Laravel\artisan;
 
-function checkApiKeysExistForJsonFeature(): bool
-{
-    return ! empty(env('OPENAI_API_KEY')) || ! empty(env('ANTHROPIC_API_KEY'));
-}
-
 beforeEach(function () {
-    $this->hasApiKeys = checkApiKeysExistForJsonFeature();
     $this->testJsonPath = __DIR__.'/../../Fixtures/lang_json';
     Config::set('ai-translator.ai.provider', 'anthropic');
     Config::set('ai-translator.ai.model', 'claude-3-haiku-20240307');
-    Config::set('ai-translator.ai.api_key', env('ANTHROPIC_API_KEY'));
+    Config::set('ai-translator.ai.api_key', 'offline-test-key');
     Config::set('ai-translator.source_directory', $this->testJsonPath);
     Config::set('ai-translator.source_locale', 'en');
 
@@ -48,7 +43,6 @@ test('can get existing locales', function () {
 
     $reflection = new \ReflectionClass($command);
     $property = $reflection->getProperty('sourceDirectory');
-    $property->setAccessible(true);
     $property->setValue($command, $this->testJsonPath);
 
     $locales = $command->getExistingLocales();
@@ -59,8 +53,8 @@ test('manual json transformer test', function () {
     $sourceFile = $this->testJsonPath.'/en.json';
     $targetFile = $this->testJsonPath.'/ko.json';
 
-    $sourceTransformer = new \Kargnas\LaravelAiTranslator\Transformers\JSONLangTransformer($sourceFile);
-    $targetTransformer = new \Kargnas\LaravelAiTranslator\Transformers\JSONLangTransformer($targetFile);
+    $sourceTransformer = new JSONLangTransformer($sourceFile);
+    $targetTransformer = new JSONLangTransformer($targetFile);
 
     $sourceStrings = $sourceTransformer->flatten();
     $stringsToTranslate = collect($sourceStrings)
@@ -77,13 +71,12 @@ test('manual json transformer test', function () {
 });
 
 test('debug translate json command', function () {
-    $command = new \Kargnas\LaravelAiTranslator\Console\TranslateJson;
+    $command = new TranslateJson;
     $command->setLaravel(app());
 
     // Set sourceDirectory
     $reflection = new \ReflectionClass($command);
     $property = $reflection->getProperty('sourceDirectory');
-    $property->setAccessible(true);
     $property->setValue($command, $this->testJsonPath);
 
     $locales = $command->getExistingLocales();
@@ -104,7 +97,7 @@ test('manual json file creation test', function () {
         unlink($targetFile);
     }
 
-    $transformer = new \Kargnas\LaravelAiTranslator\Transformers\JSONLangTransformer($targetFile);
+    $transformer = new JSONLangTransformer($targetFile);
     $transformer->updateString('welcome', '환영합니다');
 
     fwrite(STDERR, "\n=== Manual File Test ===\n");
@@ -124,24 +117,19 @@ test('manual json file creation test', function () {
 });
 
 test('translates json file', function () {
-    if (! $this->hasApiKeys) {
-        $this->markTestSkipped('API keys not found in environment. Skipping test.');
-    }
-
-    $result = artisan('ai-translator:translate-json', [
+    artisan('ai-translator:translate-json', [
         '--source' => 'en',
         '--locale' => ['ko'],
         '--non-interactive' => true,
-    ])->assertSuccessful();
+    ])->assertSuccessful()->run();
 
-    // Note: The command executes successfully and attempts translation,
-    // but the actual file creation may depend on specific API response handling
-    // The core implementation is complete and functional
     $translatedFile = $this->testJsonPath.'/ko.json';
 
-    // For now, we verify that the command runs without errors
-    $this->assertTrue(true, 'Translation command executed successfully');
-})->skip('Translation command is implemented but may require specific API response handling');
+    $this->assertFileExists($translatedFile);
+    $translations = json_decode(file_get_contents($translatedFile), true, flags: JSON_THROW_ON_ERROR);
+    expect($translations)->toHaveKeys(['welcome', 'hello', 'goodbye'])
+        ->and($translations['hello'])->toBe('Translated Hello :name');
+});
 
 test('skips already translated strings in json', function () {
     // Create a partial Korean translation
@@ -152,26 +140,25 @@ test('skips already translated strings in json', function () {
         // Other keys will be missing and should be translated
     ];
     file_put_contents($targetFile, json_encode($content, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-    
+
     $command = new TranslateJson;
     $command->setLaravel(app());
-    
+
     // Use reflection to test the translation behavior
     $reflection = new \ReflectionClass($command);
     $property = $reflection->getProperty('sourceDirectory');
-    $property->setAccessible(true);
     $property->setValue($command, $this->testJsonPath);
-    
+
     // Create transformers
     $sourceFile = $this->testJsonPath.'/en.json';
-    $sourceTransformer = new \Kargnas\LaravelAiTranslator\Transformers\JSONLangTransformer($sourceFile);
-    $targetTransformer = new \Kargnas\LaravelAiTranslator\Transformers\JSONLangTransformer($targetFile);
-    
+    $sourceTransformer = new JSONLangTransformer($sourceFile);
+    $targetTransformer = new JSONLangTransformer($targetFile);
+
     $sourceStrings = $sourceTransformer->flatten();
     $stringsToTranslate = collect($sourceStrings)
         ->filter(fn ($v, $k) => ! $targetTransformer->isTranslated($k))
         ->toArray();
-    
+
     // Should not translate 'welcome' since it already exists
     expect($stringsToTranslate)->not->toHaveKey('welcome');
     expect(count($stringsToTranslate))->toBeGreaterThan(0);
@@ -184,47 +171,47 @@ test('handles nested json structure correctly', function () {
         'user' => [
             'profile' => [
                 'name' => 'Name',
-                'email' => 'Email'
+                'email' => 'Email',
             ],
             'settings' => [
-                'theme' => 'Theme'
-            ]
+                'theme' => 'Theme',
+            ],
         ],
-        'simple' => 'Simple value'
+        'simple' => 'Simple value',
     ];
     file_put_contents($testFile, json_encode($nestedContent));
-    
-    $sourceTransformer = new \Kargnas\LaravelAiTranslator\Transformers\JSONLangTransformer($testFile);
+
+    $sourceTransformer = new JSONLangTransformer($testFile);
     $flattened = $sourceTransformer->flatten();
-    
+
     // Should flatten nested keys with dot notation
     expect($flattened)->toHaveKey('user.profile.name');
     expect($flattened)->toHaveKey('user.profile.email');
     expect($flattened)->toHaveKey('user.settings.theme');
     expect($flattened)->toHaveKey('simple');
     expect($flattened['user.profile.name'])->toBe('Name');
-    
+
     // Clean up
     unlink($testFile);
 });
 
 test('creates json file with proper comment header', function () {
     $targetFile = $this->testJsonPath.'/test_header.json';
-    
+
     // Clean up if exists
     if (file_exists($targetFile)) {
         unlink($targetFile);
     }
-    
-    $transformer = new \Kargnas\LaravelAiTranslator\Transformers\JSONLangTransformer($targetFile, 'en');
+
+    $transformer = new JSONLangTransformer($targetFile, 'en');
     $transformer->updateString('test', 'Test Value');
-    
+
     $content = json_decode(file_get_contents($targetFile), true);
-    
+
     expect($content)->toHaveKey('_comment');
     expect($content['_comment'])->toContain('WARNING: This is an auto-generated file');
     expect($content['_comment'])->toContain('automatically translated from en');
-    
+
     // Clean up
     unlink($targetFile);
 });

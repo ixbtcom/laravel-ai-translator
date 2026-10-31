@@ -22,22 +22,23 @@
         }
     ],
     "require": {
-        "php": "^8.1",
+        "php": "^8.4",
         "crowdin/crowdin-api-client": "^1.14",
         "google-gemini-php/client": "^1.0|^2.0",
         "guzzlehttp/guzzle": "^6.0|^7.0",
         "guzzlehttp/promises": "^1.0|^2.0",
-        "illuminate/support": ">=8.0",
+        "illuminate/support": "^13.0",
         "openai-php/client": ">=0.2 <1.0",
-        "symfony/process": "^5.0|^6.0|^7.0"
+        "symfony/process": "^7.4|^8.0"
     },
     "require-dev": {
-        "laravel/pint": "^1.0",
-        "orchestra/testbench": "^7.0|^8.0|^9.0|^10.0",
-        "pestphp/pest": "^1.0|^2.0|^3.0",
-        "pestphp/pest-plugin-laravel": "^1.0|^2.0|^3.0",
+        "laravel/pint": "^1.29",
+        "orchestra/testbench": "^11.0",
+        "pestphp/pest": "^4.0",
+        "pestphp/pest-plugin-laravel": "^4.0",
         "phpstan/phpstan": "^2.1",
         "phpstan/phpstan-phpunit": "^2.0",
+        "phpunit/phpunit": "^12.0",
         "spatie/invade": "^2.1"
     },
     "suggest": {
@@ -58,6 +59,11 @@
         "allow-plugins": {
             "php-http/discovery": true,
             "pestphp/pest-plugin": true
+        },
+        "policy": {
+            "advisories": {
+                "block": true
+            }
         }
     },
     "scripts": {

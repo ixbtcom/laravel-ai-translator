@@ -4,25 +4,18 @@ namespace Tests\Feature\Console;
 
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\File;
 use Kargnas\LaravelAiTranslator\Console\TranslateStrings;
 use Symfony\Component\Console\Output\BufferedOutput;
 
 use function Pest\Laravel\artisan;
 
-function checkApiKeysExistForFeature(): bool
-{
-    return ! empty(env('OPENAI_API_KEY')) && ! empty(env('ANTHROPIC_API_KEY'));
-}
-
 beforeEach(function () {
-    // Check if API keys exist
-    $this->hasApiKeys = checkApiKeysExistForFeature();
-
     // Set up test language file directory
     $this->testLangPath = __DIR__.'/../../Fixtures/lang';
 
     // For testing purpose, we use claude-3-haiku-20240307 model. (It's faster and cheaper than other models.)
-    Config::set('ai-translator.model', 'claude-3-haiku-20240307');
+    Config::set('ai-translator.ai.model', 'claude-3-haiku-20240307');
     Config::set('ai-translator.source_directory', $this->testLangPath);
     Config::set('ai-translator.source_locale', 'en');
 
@@ -44,13 +37,9 @@ beforeEach(function () {
 });
 
 afterEach(function () {
-    // Clean up only auto-generated files after test
-    // foreach (['ko', 'zh', 'zh_CN', 'zh_TW'] as $locale) {
-    //     if (is_dir($this->testLangPath . '/' . $locale)) {
-    //         array_map('unlink', glob($this->testLangPath . '/' . $locale . '/*.*'));
-    //         rmdir($this->testLangPath . '/' . $locale);
-    //     }
-    // }
+    foreach (['ko', 'zh', 'zh_CN', 'zh_TW'] as $locale) {
+        File::deleteDirectory($this->testLangPath.'/'.$locale);
+    }
 });
 
 test('command exists', function () {
@@ -64,7 +53,6 @@ test('can get existing locales', function () {
     // sourceDirectory 설정
     $reflection = new \ReflectionClass($command);
     $property = $reflection->getProperty('sourceDirectory');
-    $property->setAccessible(true);
     $property->setValue($command, $this->testLangPath);
 
     $locales = $command->getExistingLocales();
@@ -78,7 +66,6 @@ test('can get string file paths', function () {
     // Set sourceDirectory
     $reflection = new \ReflectionClass($command);
     $property = $reflection->getProperty('sourceDirectory');
-    $property->setAccessible(true);
     $property->setValue($command, $this->testLangPath);
 
     $files = $command->getStringFilePaths('en');
@@ -92,10 +79,6 @@ test('can get string file paths', function () {
 });
 
 test('handles show prompt option', function () {
-    if (! $this->hasApiKeys) {
-        $this->markTestSkipped('API keys not found in environment. Skipping test.');
-    }
-
     artisan('ai-translator:translate', [
         '--source' => 'en',
         '--locale' => ['ko'],
@@ -105,10 +88,6 @@ test('handles show prompt option', function () {
 });
 
 test('captures console output', function () {
-    if (! $this->hasApiKeys) {
-        $this->markTestSkipped('API keys not found in environment. Skipping test.');
-    }
-
     // Capture console output using BufferedOutput
     $output = new BufferedOutput;
 
@@ -134,10 +113,6 @@ test('captures console output', function () {
 });
 
 test('verifies Chinese translations format with dot notation', function () {
-    if (! $this->hasApiKeys) {
-        $this->markTestSkipped('API keys not found in environment. Skipping test.');
-    }
-
     Config::set('ai-translator.dot_notation', true);
 
     // Execute Chinese Simplified translation
@@ -176,10 +151,6 @@ test('verifies Chinese translations format with dot notation', function () {
 });
 
 test('verifies Chinese translations format with nested arrays', function () {
-    if (! $this->hasApiKeys) {
-        $this->markTestSkipped('API keys not found in environment. Skipping test.');
-    }
-
     Config::set('ai-translator.dot_notation', false);
 
     // Execute Chinese Simplified translation
@@ -227,10 +198,6 @@ test('verifies Chinese translations format with nested arrays', function () {
 });
 
 test('compares Chinese variants translations', function () {
-    if (! $this->hasApiKeys) {
-        $this->markTestSkipped('API keys not found in environment. Skipping test.');
-    }
-
     // Translate zh_CN with dot notation
     Config::set('ai-translator.dot_notation', true);
     Artisan::call('ai-translator:translate', [

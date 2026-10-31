@@ -3,6 +3,7 @@
 namespace Kargnas\LaravelAiTranslator\Console;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Collection;
 use Kargnas\LaravelAiTranslator\AI\AIProvider;
 use Kargnas\LaravelAiTranslator\AI\Language\LanguageConfig;
 use Kargnas\LaravelAiTranslator\AI\Printer\TokenUsagePrinter;
@@ -602,7 +603,7 @@ class TranslateStrings extends Command
      */
     protected function setupTranslator(
         string $file,
-        \Illuminate\Support\Collection $chunk,
+        Collection $chunk,
         array $referenceStringList,
         string $locale,
         array $globalContext
@@ -712,7 +713,7 @@ class TranslateStrings extends Command
         // 디렉토리만 필터링하고 _로 시작하는 디렉토리와 vendor 제외
         $directories = array_filter($directories, function ($directory) use ($root) {
             return is_dir($root.'/'.$directory)
-                && !str_starts_with($directory, '_')
+                && ! str_starts_with($directory, '_')
                 && $directory !== 'vendor';
         });
 
@@ -780,6 +781,7 @@ class TranslateStrings extends Command
 
         if (! is_dir($vendorDir)) {
             $this->warn('Vendor directory not found: '.$vendorDir);
+
             return;
         }
 
@@ -790,6 +792,7 @@ class TranslateStrings extends Command
 
         if (empty($packageDirs)) {
             $this->warn('No vendor packages found.');
+
             return;
         }
 
@@ -801,6 +804,7 @@ class TranslateStrings extends Command
             $sourceLocaleDir = "{$packageDir}/{$this->sourceLocale}";
             if (! is_dir($sourceLocaleDir)) {
                 $this->warn("  Source locale '{$this->sourceLocale}' not found for package '{$packageName}'. Skipping.");
+
                 continue;
             }
 
@@ -820,10 +824,11 @@ class TranslateStrings extends Command
                 : $availableLocales;
 
             // Remove source locale from targets
-            $targetLocales = array_filter($targetLocales, fn($l) => $l !== $this->sourceLocale);
+            $targetLocales = array_filter($targetLocales, fn ($l) => $l !== $this->sourceLocale);
 
             if (empty($targetLocales)) {
                 $this->info("  No target locales to translate for package '{$packageName}'.");
+
                 continue;
             }
 
@@ -832,6 +837,7 @@ class TranslateStrings extends Command
 
             if (empty($sourceFiles)) {
                 $this->warn("  No PHP files found in source locale for package '{$packageName}'.");
+
                 continue;
             }
 
@@ -844,6 +850,7 @@ class TranslateStrings extends Command
                 $targetLanguageName = LanguageConfig::getLanguageName($targetLocale);
                 if (! $targetLanguageName) {
                     $this->error("  Language name not found for locale: {$targetLocale}. Skipping.");
+
                     continue;
                 }
 
@@ -885,14 +892,15 @@ class TranslateStrings extends Command
         int $maxContextItems
     ): void {
         $fileName = basename($sourceFile);
-        $this->line("    ".$this->colors['gray']."File: {$fileName}".$this->colors['reset']);
+        $this->line('    '.$this->colors['gray']."File: {$fileName}".$this->colors['reset']);
 
         // Load source strings
         $sourceTransformer = new PHPLangTransformer($sourceFile);
         $sourceStringList = $sourceTransformer->flatten();
 
         if (empty($sourceStringList)) {
-            $this->info("    ".$this->colors['gray']."Empty file. Skipping.".$this->colors['reset']);
+            $this->info('    '.$this->colors['gray'].'Empty file. Skipping.'.$this->colors['reset']);
+
             return;
         }
 
@@ -901,15 +909,16 @@ class TranslateStrings extends Command
 
         // Filter untranslated strings only
         $stringsToTranslate = collect($sourceStringList)
-            ->filter(fn($value, $key) => ! $targetTransformer->isTranslated($key))
+            ->filter(fn ($value, $key) => ! $targetTransformer->isTranslated($key))
             ->toArray();
 
         if (empty($stringsToTranslate)) {
-            $this->info("    ".$this->colors['green']."✓ All strings already translated.".$this->colors['reset']);
+            $this->info('    '.$this->colors['green'].'✓ All strings already translated.'.$this->colors['reset']);
+
             return;
         }
 
-        $this->info("    ".$this->colors['yellow']."Translating ".count($stringsToTranslate)." strings...".$this->colors['reset']);
+        $this->info('    '.$this->colors['yellow'].'Translating '.count($stringsToTranslate).' strings...'.$this->colors['reset']);
 
         // Process in chunks
         $totalChunks = ceil(count($stringsToTranslate) / $this->chunkSize);
@@ -920,16 +929,14 @@ class TranslateStrings extends Command
             ->chunk($this->chunkSize)
             ->each(function ($chunk) use (
                 $sourceFile,
-                $targetFile,
                 $targetLocale,
                 $targetTransformer,
-                $maxContextItems,
                 &$chunkCount,
                 $totalChunks,
                 &$translatedCount
             ) {
                 $chunkCount++;
-                $this->info("    ".$this->colors['yellow']."Chunk {$chunkCount}/{$totalChunks}".$this->colors['reset']);
+                $this->info('    '.$this->colors['yellow']."Chunk {$chunkCount}/{$totalChunks}".$this->colors['reset']);
 
                 // Setup translator
                 $translator = new AIProvider(
@@ -943,10 +950,10 @@ class TranslateStrings extends Command
                 );
 
                 // Set callbacks
-                $translator->setOnTranslated(function ($item, $status, $translatedItems) use ($chunk) {
+                $translator->setOnTranslated(function ($item, $status, $translatedItems) {
                     if ($status === TranslationStatus::COMPLETED) {
-                        $this->line("      ".$this->colors['cyan']."⟳ ".$this->colors['reset'].
-                            $item->key.$this->colors['gray']." → ".$this->colors['reset'].$item->translated);
+                        $this->line('      '.$this->colors['cyan'].'⟳ '.$this->colors['reset'].
+                            $item->key.$this->colors['gray'].' → '.$this->colors['reset'].$item->translated);
                     }
                 });
 
@@ -963,10 +970,10 @@ class TranslateStrings extends Command
                     $this->updateTokenUsageTotals($translator->getTokenUsage());
 
                 } catch (\Exception $e) {
-                    $this->error("    Translation failed: ".$e->getMessage());
+                    $this->error('    Translation failed: '.$e->getMessage());
                 }
             });
 
-        $this->info("    ".$this->colors['green']."✓ Translated {$translatedCount} strings.".$this->colors['reset']);
+        $this->info('    '.$this->colors['green']."✓ Translated {$translatedCount} strings.".$this->colors['reset']);
     }
 }

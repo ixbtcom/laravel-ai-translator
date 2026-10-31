@@ -391,10 +391,10 @@ class AIProvider
 
     protected function getTranslatedObjectsFromOpenAI(): array
     {
-        $client = new OpenAIClient(
-            config('ai-translator.ai.api_key'),
-            config('ai-translator.ai.base_url')
-        );
+        $client = app()->make(OpenAIClient::class, [
+            'apiKey' => config('ai-translator.ai.api_key'),
+            'baseUrl' => config('ai-translator.ai.base_url'),
+        ]);
         $totalItems = count($this->strings);
 
         // Initialize response parser
@@ -467,7 +467,9 @@ class AIProvider
 
     protected function getTranslatedObjectsFromGemini(): array
     {
-        $client = new GeminiClient(config('ai-translator.ai.api_key'));
+        $client = app()->make(GeminiClient::class, [
+            'apiKey' => config('ai-translator.ai.api_key'),
+        ]);
 
         $responseParser = new AIResponseParser($this->onTranslated);
 
@@ -499,7 +501,9 @@ class AIProvider
 
     protected function getTranslatedObjectsFromAnthropic(): array
     {
-        $client = new AnthropicClient(config('ai-translator.ai.api_key'));
+        $client = app()->make(AnthropicClient::class, [
+            'apiKey' => config('ai-translator.ai.api_key'),
+        ]);
         $useExtendedThinking = config('ai-translator.ai.use_extended_thinking', false);
         $totalItems = count($this->strings);
         $debugMode = config('app.debug', false);

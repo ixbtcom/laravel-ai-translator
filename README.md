@@ -216,8 +216,14 @@ These custom styles offer creative ways to customize your translations, adding a
 
 ## Prerequisites
 
-- PHP 8.0 or higher
-- Laravel 8.0 or higher
+- PHP 8.4 или 8.5
+- Laravel 13
+
+### Проверка пакета
+
+Тестовый harness использует Orchestra Testbench 11, Pest 4 и PHPUnit 12. GitHub/GitLab CI проверяет PHP 8.4 и 8.5 с Composer 2.11.1; блокировка зависимостей с security advisories включена. JSON-отчёт `composer audit` сохраняется в артефактах каждого прогона.
+
+`composer test` выполняет тесты без внешних API и реальных ключей: тестовые bindings трёх клиентов возвращают детерминированные ответы, а настоящий provider/parser и запись языковых файлов продолжают работать. CI запрещает skipped/incomplete tests и отдельно запускает PHPStan.
 
 ## Installation
 
