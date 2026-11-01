@@ -17,6 +17,7 @@ AI-powered translation tool for Laravel language files
 </p>
 
 > **Note:** This is a fork of [kargnas/laravel-ai-translator](https://github.com/kargnas/laravel-ai-translator) with additional features.
+> Its canonical source is [GitLab](https://glab.ixbt.site/packages/laravel-ai-translator), branch `master`. To install this fork as `kargnas/laravel-ai-translator:dev-master`, configure the VCS repository `https://glab.ixbt.site/packages/laravel-ai-translator.git` with GitLab access; see the [fork installation example](README_RU.md#из-этого-форка).
 
 ## 🆕 Fork Features
 
@@ -221,7 +222,7 @@ These custom styles offer creative ways to customize your translations, adding a
 
 ### Проверка пакета
 
-Тестовый harness использует Orchestra Testbench 11, Pest 4 и PHPUnit 12. GitHub/GitLab CI проверяет PHP 8.4 и 8.5 с Composer 2.11.1; блокировка зависимостей с security advisories включена. JSON-отчёт `composer audit` сохраняется в артефактах каждого прогона.
+Тестовый harness использует Orchestra Testbench 11, Pest 4 и PHPUnit 12. Канонический GitLab CI (`.gitlab-ci.yml`, job `quality`) проверяет PHP 8.5 с Composer 2.11.1; блокировка зависимостей с security advisories включена. JSON-отчёт `composer audit` сохраняется в артефактах каждого прогона.
 
 `composer test` выполняет тесты без внешних API и реальных ключей: тестовые bindings трёх клиентов возвращают детерминированные ответы, а настоящий provider/parser и запись языковых файлов продолжают работать. CI запрещает skipped/incomplete tests и отдельно запускает PHPStan.
 

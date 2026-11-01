@@ -108,7 +108,7 @@ composer require kargnas/laravel-ai-translator
     "repositories": [
         {
             "type": "vcs",
-            "url": "https://github.com/ixbtcom/laravel-ai-translator.git"
+            "url": "https://glab.ixbt.site/packages/laravel-ai-translator.git"
         }
     ],
     "require": {
