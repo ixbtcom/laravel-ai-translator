@@ -66,7 +66,7 @@ Laravel package for AI-powered translations supporting multiple AI providers (Op
    - `PHPLangTransformer.php`: Handles PHP array language files
    - `JSONLangTransformer.php`: Handles JSON language files
 
-4. **Language Support** (`src/Language/`)
+4. **Language Support** (`src/AI/Language/`)
    - `Language.php`: Language detection and metadata
    - `LanguageConfig.php`: Language-specific configurations
    - `LanguageRules.php`: Translation rules per language
